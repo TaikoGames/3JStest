@@ -38,6 +38,32 @@ window.addEventListener('keydown', e => {
 });
 window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
 
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+
+window.addEventListener('click', e => {
+  pointer.x = (e.clientX / innerWidth) * 2 - 1;
+  pointer.y = -(e.clientY / innerHeight) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+
+  const hits = raycaster.intersectObjects(scene.children, true);
+  if (hits.length > 0) {
+    if (hits[0].object.name === 'MyCube') {
+      window.open('https://www.blendertutoring.com', '_blank');
+    }
+  }
+});
+
+window.addEventListener('mousemove', e => {
+  pointer.x = (e.clientX / innerWidth) * 2 - 1;
+  pointer.y = -(e.clientY / innerHeight) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+
+  const hits = raycaster.intersectObjects(scene.children, true);
+  const hit = hits.find(h => h.object.name === 'MyCube');
+  document.body.style.cursor = hit ? 'pointer' : 'default';
+});
+
 const clock = new THREE.Clock();
 let mixer;
 

@@ -40,8 +40,30 @@ window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
 const clock = new THREE.Clock();
 let mixer;
 
+const mat = new THREE.MeshStandardMaterial({
+  color: 0xaa0000,
+  metalness: 1.0,
+  roughness: 0.2,
+});
+
+mat.onBeforeCompile = shader => {
+  shader.fragmentShader = shader.fragmentShader.replace(
+    '#include <dithering_fragment>',
+    `
+    #include <dithering_fragment>
+    float fresnel = pow(1.0 - dot(normalize(vNormal), normalize(vViewPosition)), 3.0);
+    gl_FragColor.rgb += vec3(1.0, 0.2, 0.1) * fresnel * 1.5;
+    `
+  );
+};
+
 new GLTFLoader().load('cube.glb', g => {
   scene.add(g.scene);
+
+  g.scene.traverse(child => {
+    if (child.isMesh) child.material = mat;
+  });
+
   if (g.animations.length) {
     mixer = new THREE.AnimationMixer(g.scene);
     g.animations.forEach(clip => mixer.clipAction(clip).play());

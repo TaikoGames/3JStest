@@ -33,4 +33,134 @@ window.addEventListener('keydown', e => {
   keys[e.key.toLowerCase()] = true;
   if (e.key === 'Enter') {
     camera.position.copy(initPos);
-    controls.target.copy(ini
+    controls.target.copy(initTarget);
+  }
+});
+window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+let hovered = false;
+
+window.addEventListener('click', e => {
+  pointer.x = (e.clientX / innerWidth) * 2 - 1;
+  pointer.y = -(e.clientY / innerHeight) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+
+  const hits = raycaster.intersectObjects(scene.children, true);
+  if (hits.length > 0 && hits[0].object.name === 'MyCube') {
+    window.open('https://www.blendertutoring.com', '_blank');
+  }
+});
+
+window.addEventListener('mousemove', e => {
+  pointer.x = (e.clientX / innerWidth) * 2 - 1;
+  pointer.y = -(e.clientY / innerHeight) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+
+  const hits = raycaster.intersectObjects(scene.children, true);
+  hovered = hits.some(h => h.object.name === 'MyCube');
+  document.body.style.cursor = hovered ? 'pointer' : 'default';
+});
+
+const clock = new THREE.Clock();
+let mixer;
+
+const mat = new THREE.MeshStandardMaterial({
+  color: 0xaa0000,
+  metalness: 1.0,
+  roughness: 0.15,
+});
+
+mat.onBeforeCompile = shader => {
+  shader.uniforms.uTime  = { value: 0 };
+  shader.uniforms.uHover = { value: 0 };
+  mat.userData.shader = shader;
+
+  shader.fragmentShader = `
+    uniform float uTime;
+    uniform float uHover;
+    ${shader.fragmentShader}
+  `.replace(
+    '#include <dithering_fragment>',
+    `
+    #include <dithering_fragment>
+
+    vec3 viewDir = normalize(vViewPosition);
+    vec3 norm    = normalize(vNormal);
+
+    float fresnel = pow(1.0 - dot(norm, viewDir), 3.0);
+
+    float angle = dot(norm, viewDir) + uTime * 0.4;
+    vec3 iridescence = vec3(
+      0.5 + 0.5 * sin(angle * 6.0 + 0.0),
+      0.5 + 0.5 * sin(angle * 6.0 + 2.094),
+      0.5 + 0.5 * sin(angle * 6.0 + 4.189)
+    );
+
+    // Hover boosts pulse speed and fresnel intensity
+    float pulseSpeed = mix(2.0, 6.0, uHover);
+    float pulseStrength = mix(0.2, 0.5, uHover);
+    float pulse = (1.0 - pulseStrength) + pulseStrength * sin(uTime * pulseSpeed);
+
+    float fresnelStrength = mix(1.2, 2.5, uHover);
+    vec3 rimColor = mix(vec3(1.0, 0.1, 0.05), vec3(1.0, 0.6, 0.1), uHover);
+
+    gl_FragColor.rgb += rimColor * fresnel * fresnelStrength * pulse;
+    gl_FragColor.rgb += iridescence * fresnel * mix(0.8, 1.6, uHover);
+    gl_FragColor.rgb = mix(gl_FragColor.rgb, iridescence, fresnel * mix(0.3, 0.6, uHover));
+    `
+  );
+};
+
+new GLTFLoader().load('cube.glb', g => {
+  scene.add(g.scene);
+
+  g.scene.traverse(child => {
+    if (child.isMesh) child.material = mat;
+  });
+
+  if (g.animations.length) {
+    mixer = new THREE.AnimationMixer(g.scene);
+    g.animations.forEach(clip => mixer.clipAction(clip).play());
+  }
+});
+
+const moveSpeed = 5;
+const direction = new THREE.Vector3();
+const forward = new THREE.Vector3();
+const right = new THREE.Vector3();
+
+renderer.setAnimationLoop(() => {
+  const delta = clock.getDelta();
+  mixer?.update(delta);
+
+  if (mat.userData.shader) {
+    const target = hovered ? 1.0 : 0.0;
+    mat.userData.shader.uniforms.uHover.value += (target - mat.userData.shader.uniforms.uHover.value) * 0.08;
+    mat.userData.shader.uniforms.uTime.value = clock.elapsedTime;
+  }
+
+  camera.getWorldDirection(forward);
+  forward.y = 0;
+  forward.normalize();
+  right.crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+
+  direction.set(0, 0, 0);
+  if (keys['w']) direction.addScaledVector(forward,  1);
+  if (keys['s']) direction.addScaledVector(forward, -1);
+  if (keys['a']) direction.addScaledVector(right,   -1);
+  if (keys['d']) direction.addScaledVector(right,    1);
+
+  if (direction.lengthSq() > 0) {
+    direction.normalize().multiplyScalar(moveSpeed * delta);
+    camera.position.add(direction);
+    controls.target.add(direction);
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>

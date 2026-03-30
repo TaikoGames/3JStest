@@ -66,55 +66,63 @@ window.addEventListener('mousemove', e => {
 const clock = new THREE.Clock();
 let mixer;
 
-const mat = new THREE.MeshStandardMaterial({
-  color: 0xaa0000,
-  metalness: 1.0,
-  roughness: 0.15,
-});
+function buildShader(withFlash) {
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xaa0000,
+    metalness: 1.0,
+    roughness: 0.15,
+  });
 
-mat.onBeforeCompile = shader => {
-  shader.uniforms.uTime  = { value: 0 };
-  shader.uniforms.uHover = { value: 0 };
-  mat.userData.shader = shader;
+  mat.onBeforeCompile = shader => {
+    shader.uniforms.uTime  = { value: 0 };
+    shader.uniforms.uHover = { value: 0 };
+    mat.userData.shader = shader;
 
-  shader.fragmentShader = `
-    uniform float uTime;
-    uniform float uHover;
-    ${shader.fragmentShader}
-  `.replace(
-    '#include <dithering_fragment>',
-    `
-    #include <dithering_fragment>
+    shader.fragmentShader = `
+      uniform float uTime;
+      uniform float uHover;
+      ${shader.fragmentShader}
+    `.replace(
+      '#include <dithering_fragment>',
+      `
+      #include <dithering_fragment>
 
-    vec3 viewDir = normalize(vViewPosition);
-    vec3 norm    = normalize(vNormal);
+      vec3 viewDir = normalize(vViewPosition);
+      vec3 norm    = normalize(vNormal);
 
-    float fresnel = pow(1.0 - dot(norm, viewDir), 3.0);
+      float fresnel = pow(1.0 - dot(norm, viewDir), 3.0);
 
-    float angle = dot(norm, viewDir) + uTime * 0.4;
-    vec3 iridescence = vec3(
-      0.5 + 0.5 * sin(angle * 6.0 + 0.0),
-      0.5 + 0.5 * sin(angle * 6.0 + 2.094),
-      0.5 + 0.5 * sin(angle * 6.0 + 4.189)
+      float angle = dot(norm, viewDir) + uTime * 0.4;
+      vec3 iridescence = vec3(
+        0.5 + 0.5 * sin(angle * 6.0 + 0.0),
+        0.5 + 0.5 * sin(angle * 6.0 + 2.094),
+        0.5 + 0.5 * sin(angle * 6.0 + 4.189)
+      );
+
+      float pulseSpeed = mix(2.0, 6.0, uHover);
+      float pulseStrength = mix(0.2, 0.5, uHover);
+      float pulse = (1.0 - pulseStrength) + pulseStrength * sin(uTime * pulseSpeed);
+
+      float fresnelStrength = mix(1.2, 2.5, uHover);
+      vec3 rimColor = mix(vec3(1.0, 0.1, 0.05), vec3(1.0, 0.6, 0.1), uHover);
+
+      gl_FragColor.rgb += rimColor * fresnel * fresnelStrength * pulse;
+      gl_FragColor.rgb += iridescence * fresnel * mix(0.8, 1.6, uHover);
+      gl_FragColor.rgb = mix(gl_FragColor.rgb, iridescence, fresnel * mix(0.3, 0.6, uHover));
+
+      ${withFlash ? `
+      float flash = uHover * (0.5 + 0.5 * sin(uTime * 8.0)) * 0.4;
+      gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(1.0), flash);
+      ` : ''}
+      `
     );
+  };
 
-    float pulseSpeed = mix(2.0, 6.0, uHover);
-    float pulseStrength = mix(0.2, 0.5, uHover);
-    float pulse = (1.0 - pulseStrength) + pulseStrength * sin(uTime * pulseSpeed);
+  return mat;
+}
 
-    float fresnelStrength = mix(1.2, 2.5, uHover);
-    vec3 rimColor = mix(vec3(1.0, 0.1, 0.05), vec3(1.0, 0.6, 0.1), uHover);
-
-    gl_FragColor.rgb += rimColor * fresnel * fresnelStrength * pulse;
-    gl_FragColor.rgb += iridescence * fresnel * mix(0.8, 1.6, uHover);
-    gl_FragColor.rgb = mix(gl_FragColor.rgb, iridescence, fresnel * mix(0.3, 0.6, uHover));
-
-    // White flash on hover
-    float flash = uHover * (0.5 + 0.5 * sin(uTime * 8.0)) * 0.4;
-    gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(1.0), flash);
-    `
-  );
-};
+const mat      = buildShader(false); // all other cubes
+const matCube  = buildShader(true);  // MyCube only
 
 const targetScaleVec = new THREE.Vector3();
 
@@ -122,7 +130,9 @@ new GLTFLoader().load('cube.glb', g => {
   scene.add(g.scene);
 
   g.scene.traverse(child => {
-    if (child.isMesh) child.material = mat;
+    if (child.isMesh) {
+      child.material = child.name === 'MyCube' ? matCube : mat;
+    }
   });
 
   if (g.animations.length) {
@@ -140,11 +150,14 @@ renderer.setAnimationLoop(() => {
   const delta = clock.getDelta();
   mixer?.update(delta);
 
-  if (mat.userData.shader) {
-    const target = hovered ? 1.0 : 0.0;
-    mat.userData.shader.uniforms.uHover.value += (target - mat.userData.shader.uniforms.uHover.value) * 0.08;
-    mat.userData.shader.uniforms.uTime.value = clock.elapsedTime;
-  }
+  // Update both materials
+  [mat, matCube].forEach(m => {
+    if (m.userData.shader) {
+      const target = hovered ? 1.0 : 0.0;
+      m.userData.shader.uniforms.uHover.value += (target - m.userData.shader.uniforms.uHover.value) * 0.08;
+      m.userData.shader.uniforms.uTime.value = clock.elapsedTime;
+    }
+  });
 
   scene.traverse(child => {
     if (child.name === 'MyCube') {

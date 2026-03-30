@@ -24,9 +24,22 @@ document.body.appendChild(renderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 
-new GLTFLoader().load('cube.glb', g => scene.add(g.scene));
+const clock = new THREE.Clock();
+let mixer;
 
-renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+new GLTFLoader().load('cube.glb', g => {
+  scene.add(g.scene);
+  if (g.animations.length) {
+    mixer = new THREE.AnimationMixer(g.scene);
+    g.animations.forEach(clip => mixer.clipAction(clip).play());
+  }
+});
+
+renderer.setAnimationLoop(() => {
+  mixer?.update(clock.getDelta());
+  controls.update();
+  renderer.render(scene, camera);
+});
 </script>
 </body>
 </html>
